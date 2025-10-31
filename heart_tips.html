@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>SLJ</title>
+<style>
+  :root{
+    --heart-scale: 1; /* overall heart scale (JS may override) */
+    --msg-scale: 1;   /* individual message box scale (usually smaller than heart-scale) */
+    --petal-w: 22px;   /* heart petal width */
+    --petal-h: 34px;   /* heart petal height */
+    --msg-pad-y: 10px; /* .msg padding vertical */
+    --msg-pad-x: 16px; /* .msg padding horizontal */
+  }
+  html,body{
+    height:100%;margin:0;overflow:hidden;
+    font-family:"微软雅黑",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 50% 45%, rgba(255,255,255,.65), rgba(255,255,255,0) 60%),
+      radial-gradient(circle at 50% 45%, #fff4f7 0%, #c9eaff 100%);
+  }
+  .stage{position:relative;width:100%;height:100%;}
+  .msg{
+    position:absolute;left:50%;top:50%;
+  padding:var(--msg-pad-y) var(--msg-pad-x);border-radius:16px;
+    color:#fff;font-weight:700;
+    font-size:clamp(14px,3vmin,22px);
+    text-shadow:0 2px 8px rgba(0,0,0,.28);
+    opacity:0;
+    transform:
+      translate(-50%,-50%) translate(var(--dx),var(--dy)) scale(calc(.75 * var(--msg-scale))) rotate(var(--rot));
+    animation: flight var(--dur) cubic-bezier(.25,.7,.3,1) var(--delay) both;
+    box-shadow:0 8px 26px rgba(0,0,0,.22);
+    will-change: transform, opacity;
+    background: var(--bg);
+  }
+
+  /* 1 散开→回收→定型为心（停住不消失） */
+  @keyframes flight{
+    0%{
+      opacity:0;
+      transform:translate(-50%,-50%) translate(var(--dx),var(--dy)) scale(calc(.75 * var(--msg-scale))) rotate(var(--rot));
+    }
+    18%{ opacity:1; }
+    45%{
+      transform:translate(-50%,-50%) translate(calc(var(--dx)*.2),calc(var(--dy)*.2)) scale(calc(1.06 * var(--msg-scale)));
+    }
+    70%{
+      transform:translate(-50%,-50%) translate(calc(var(--dx)*1.15),calc(var(--dy)*1.15)) scale(calc(.95 * var(--msg-scale))) rotate(var(--rot));
+    }
+    88%{
+      transform:translate(-50%,-50%) translate(calc(var(--heart-x)*.6),calc(var(--heart-y)*.6)) scale(calc(.9 * var(--msg-scale))) rotate(var(--heart-rot));
+    }
+    100%{
+      opacity:1;
+      transform:translate(-50%,-50%) translate(var(--heart-x),var(--heart-y)) scale(calc(1 * var(--msg-scale))) rotate(var(--heart-rot));
+    }
+  }
+
+  /* 文字淡出→心瓣显形（用两个半圆） */
+  .msg::before,.msg::after{
+    content:'';
+    position:absolute;left:50%;top:0;
+    background:inherit;border-radius:50px 50px 0 0;
+    width:var(--petal-w);height:var(--petal-h);opacity:0;transition:opacity .28s ease;
+    transform-origin:0 100%;transform:rotate(-45deg);
+  }
+  .msg::after{ left:0;transform-origin:100% 100%;transform:rotate(45deg); }
+  .msg.heart-mode{ color:transparent; text-shadow:none; }
+  .msg.heart-mode::before,.msg.heart-mode::after{ opacity:1; }
+
+  /* 定型后：轻微“呼吸”2秒（随后触发二次爆炸） */
+  .msg.locked{
+    animation:none;
+    transform:translate(-50%,-50%) translate(var(--heart-x),var(--heart-y)) scale(calc(1 * var(--msg-scale))) rotate(var(--heart-rot));
+    opacity:1;
+  }
+  .msg.locked.pulse{
+    animation:pulse 2.2s ease-in-out 1;
+  }
+  @keyframes pulse{
+    0%,100%{ transform:translate(-50%,-50%) translate(var(--heart-x),var(--heart-y)) scale(calc(1 * var(--msg-scale))); }
+    50%   { transform:translate(-50%,-50%) translate(var(--heart-x),var(--heart-y)) scale(calc(1.08 * var(--msg-scale))); }
+  }
+
+  /* 2 从心形位置向外飞散并淡出 */
+  .msg.burst{
+    animation: burst 1.4s cubic-bezier(.17,.6,.2,1) forwards;
+  }
+  @keyframes burst{
+    0%{
+      opacity:1;
+      transform:translate(-50%,-50%) translate(var(--heart-x),var(--heart-y)) scale(calc(1 * var(--msg-scale)));
+      filter:blur(0);
+    }
+    70%{
+      opacity:.9;
+      transform:
+        translate(-50%,-50%)
+        translate(calc(var(--heart-x) + var(--bx)*0.7), calc(var(--heart-y) + var(--by)*0.7))
+        scale(calc(.9 * var(--msg-scale))) rotate(var(--rot));
+      filter:blur(.3px);
+    }
+    100%{
+      opacity:0;
+      transform:
+        translate(-50%,-50%)
+        translate(calc(var(--heart-x) + var(--bx)), calc(var(--heart-y) + var(--by)))
+        scale(calc(.7 * var(--msg-scale))) rotate(var(--rot));
+      filter:blur(1px);
+    }
+  }
+
+  /* 控制文字大小与行高，随 msg-scale 缩放 */
+  /* 字体使用 clamp 来兼顾不同屏幕与 msg-scale 的可读性 */
+  .msg{ font-size: clamp(12px, calc(3vmin * var(--msg-scale)), 18px); line-height:1.2; }
+
+  .center-title{
+    position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);
+    font-weight:800;letter-spacing:.12em;
+    font-size:clamp(18px,4vmin,28px);
+    color:rgba(255,105,180,.6);
+    text-shadow:0 2px 10px rgba(255,105,180,.15);
+    opacity:.0; pointer-events:none;
+    animation:titleIn 1.2s ease 0.8s both;
+  }
+  @keyframes titleIn{
+    from{opacity:0; transform:translate(-50%,-55%);}
+    to  {opacity:.95; transform:translate(-50%,-50%);}
+  }
+
+  .replay{
+    position:absolute;right:18px;bottom:18px;
+    padding:10px 14px;border:none;border-radius:10px;
+    background:rgba(255,255,255,.5);
+    backdrop-filter:blur(8px);
+    color:#222;font-weight:600;cursor:pointer;
+    box-shadow:0 5px 20px rgba(0,0,0,.22);
+  }
+
+  /* 初始输入遮罩（生日验证） */
+  .overlay{
+    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35));
+    z-index:9999;
+  }
+  .overlay-card{
+    background: #fff; padding:22px 20px; border-radius:12px; width:min(520px,70%);
+    box-shadow:0 10px 40px rgba(0,0,0,.25); text-align:center;
+  }
+  .overlay-card h2{ margin:0 0 10px;font-size:18px;color:#222 }
+  .overlay-card p{ margin:0 0 16px;color:#555 }
+  /* 输入框宽度为设备宽度的 80%，并设置最大宽度以防桌面过宽 */
+  .birthday-input{ width:70vw; max-width:420px; padding:12px 14px;border-radius:8px;border:1px solid #e6e6e6;font-size:16px; box-sizing:border-box; }
+  .overlay-btn{ margin-top:12px;background:#ff7eb3;color:#fff;border:none;padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer }
+  .overlay-error{ color:#d94b4b;margin-top:8px;min-height:18px }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="center-title" id="title">To SLJ ♥</div>
+  </div>
+  <!-- 验证遮罩：用户输入生日才能播放动画 -->
+  <div class="overlay" id="overlay">
+    <div class="overlay-card">
+      <h2>请输入你的生日以继续</h2>
+      <p>格式例如：20050527</p>
+  <input id="birthday" class="birthday-input" type="text" inputmode="numeric" maxlength="8" placeholder="YYYYMMDD" />
+      <div class="overlay-error" id="overlayError"></div>
+      <button class="overlay-btn" id="overlayBtn">确认</button>
+    </div>
+  </div>
+  <button class="replay" id="replay">重放</button>
+
+<script>
+
+const tips=[
+  '想念在风里飘','月亮为你亮','喜欢你很久了','你是我的心动','温柔落在人间',
+  '星光都为你闪','梦里有你真好','世界因你柔软','心跳为你加速','有你真好',
+  '你是独一无二的光','遇见你是浪漫的开始','晚风也温柔了','你的笑融化星河',
+  '想陪你看星星','今夜的梦给你','宇宙都在偏爱你','你是人间的奇迹',
+  '拥抱要紧一点','想你成习惯了','一瞬也是永恒','你眼里有星星','你的温柔让我沦陷',
+  '风都是甜的','为你心动不止','想成为你的例外','心有桃花一片','你是我梦里的光',
+  '想和你看海','此刻的风想你','遇见你后时间变慢','所有浪漫都与你有关',
+  '想靠近你一点','你的名字是我心事','心软是因为你','想牵你的手看日落',
+  '每次想你星星都亮了','心跳藏不住','有你世界亮一点','甜在风里也在心里'
+];
+
+const stage  = document.getElementById('stage');
+const replay = document.getElementById('replay');
+const title  = document.getElementById('title');
+
+/* 外抛方向 */
+const directions = [
+  {dx:'0vw',dy:'-80vh'},{dx:'0vw',dy:'80vh'},
+  {dx:'-80vw',dy:'0vh'},{dx:'80vw',dy:'0vh'},
+  {dx:'-70vw',dy:'-70vh'},{dx:'70vw',dy:'-70vh'},
+  {dx:'-70vw',dy:'70vh'},{dx:'70vw',dy:'70vh'},
+  {dx:'0vw',dy:'-60vh'},{dx:'0vw',dy:'60vh'},
+  {dx:'-60vw',dy:'0vh'},{dx:'60vw',dy:'0vh'}
+];
+
+function rand(min,max){return Math.random()*(max-min)+min;}
+function randomGradient(){
+  const arr=[
+    ['#ff758c','#ff7eb3'], ['#a18cd1','#fbc2eb'],
+    ['#f6d365','#fda085'], ['#84fab0','#8fd3f4'],
+    ['#f093fb','#f5576c'], ['#4facfe','#00f2fe'],
+    ['#43e97b','#38f9d7'], ['#fa709a','#fee140'],
+    ['#30cfd0','#330867'], ['#5ee7df','#b490ca']
+  ];
+  const [c1,c2]=arr[Math.floor(Math.random()*arr.length)];
+  return `linear-gradient(135deg,${c1},${c2})`;
+}
+
+/* 心形参数方程（受 --heart-scale 控制） */
+function heartXY(t){
+  const baseS = 12; // 原始基准比例
+  // 从 CSS 变量读取当前 scale（由 JS 在初始化/resize 时设置）
+  const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--heart-scale')) || 1;
+  const s = baseS * scale;
+  const x = s * (16 * Math.sin(t)**3);
+  const y = -s * (13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t));
+  return {x: x+'px', y: y+'px'};
+}
+
+/* 根据视口大小设置缩放（便于在手机上整体减小爱心） */
+function setHeartScale(){
+  const w = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+  let scale = 1;
+  // 调整经验阈值：保持手机可读性，避免过小导致缺角
+  if(w <= 420) scale = 0.85;      // 小屏手机：再小一点点，但保持可读性
+  else if(w <= 768) scale = 0.9; // 平板/小平板
+  else scale = 1;                // 桌面
+
+  // 应用到 CSS 变量，同时调整伪元素尺寸与内边距
+  document.documentElement.style.setProperty('--heart-scale', scale);
+  document.documentElement.style.setProperty('--petal-w', (22 * scale) + 'px');
+  document.documentElement.style.setProperty('--petal-h', (34 * scale) + 'px');
+  document.documentElement.style.setProperty('--msg-pad-y', (10 * scale) + 'px');
+  document.documentElement.style.setProperty('--msg-pad-x', (16 * scale) + 'px');
+
+  // 单个弹窗缩放：不要太小，保证文字可读和颗粒覆盖足够密集
+  const msgScale = Math.max(0.7, scale * 1.0);
+  document.documentElement.style.setProperty('--msg-scale', msgScale);
+}
+
+// 在加载和调整窗口大小时应用缩放
+setHeartScale();
+window.addEventListener('resize', () => { setHeartScale(); }, {passive:true});
+
+function createMsg(i,total){
+  const el = document.createElement('div');
+  el.className = 'msg';
+
+  const d = directions[Math.floor(Math.random()*directions.length)];
+  el.style.setProperty('--dx', d.dx);
+  el.style.setProperty('--dy', d.dy);
+  el.style.setProperty('--rot', rand(-55,55)+'deg');
+  el.style.setProperty('--dur', (rand(6.8,8.6))+'s');
+  el.style.setProperty('--delay', (i*0.11 + rand(0,0.35))+'s');
+  el.style.setProperty('--bg', randomGradient());
+
+  // 均匀映射到 0~2π 的心形路径
+  // 使用 (i+0.5)/total 来均匀分布，避免首尾接缝导致的缺口
+  const t = ((i + 0.5) / total) * Math.PI * 2;
+  const {x,y} = heartXY(t);
+  el.style.setProperty('--heart-x', x);
+  el.style.setProperty('--heart-y', y);
+  el.style.setProperty('--heart-rot', rand(-18,18)+'deg');
+
+  // 文本容器
+  const span = document.createElement('span');
+  span.className = 'text';
+  span.textContent = tips[Math.floor(Math.random()*tips.length)];
+  el.appendChild(span);
+
+  // 回收前切心瓣
+  const delay = parseFloat(el.style.getPropertyValue('--delay'));
+  const dur   = parseFloat(el.style.getPropertyValue('--dur'));
+  const switchAt = delay + dur * 0.86;
+  const switchTimer = setTimeout(()=>{ el.classList.add('heart-mode'); }, switchAt*1000);
+
+  // flight 完成：定型并做一次心跳
+  el.addEventListener('animationend',()=>{
+    clearTimeout(switchTimer);
+    el.classList.add('heart-mode','locked','pulse');
+
+    // 为“最终爆炸”预先计算飞散向量（基于心形中心向四周）
+    const spread = rand(140, 260);     // 爆散距离(px)
+    const ang    = rand(0, Math.PI*2); // 方向
+    const bx = Math.cos(ang)*spread;
+    const by = Math.sin(ang)*spread;
+    el.style.setProperty('--bx', bx+'px');
+    el.style.setProperty('--by', by+'px');
+  }, {once:true});
+
+  stage.appendChild(el);
+}
+
+/* 触发最终爆炸 */
+function finalBurst(){
+  stage.querySelectorAll('.msg.locked').forEach(el=>{
+    el.classList.remove('pulse');
+    // 统一稍许随机延迟
+    const jitter = rand(0, 200); // 0~200ms
+    setTimeout(()=> el.classList.add('burst'), jitter);
+    // 清理 DOM
+    el.addEventListener('animationend',()=> el.remove(), {once:true});
+  });
+}
+
+/* 播放全流程 */
+function play(){
+  // 清空
+  stage.querySelectorAll('.msg').forEach(n=>n.remove());
+  title.style.opacity = 0;
+
+  // 根据当前 heart-scale 在小屏上可适当调整粒子数，避免因元素过小而出现空隙
+  const heartScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--heart-scale')) || 1;
+  let TOTAL = 220; // 默认
+  if(heartScale < 0.95) TOTAL = 300; // 小屏时显著增颗粒以填满心形，避免两侧缺失
+  if(heartScale >= 1.1) TOTAL = 200;  // 若将来放大，可适当减少
+
+  for(let i=0;i<TOTAL;i++) createMsg(i,TOTAL);
+
+  // 中心字样淡入
+  setTimeout(()=>{ title.style.opacity = 1; }, 1400);
+
+  // 等所有粒子都“定型心形”并心跳完，再统一爆炸
+  // 估算：最长 flight ≈ 8.6s + 最大延迟 ≈ 0.35 + 额外余量 0.3s，再等心跳 2.2s
+  const TOTAL_TIME_MS = (8.6 + 0.35 + 0.3 + 2.2) * 1000;
+  setTimeout(finalBurst, TOTAL_TIME_MS);
+}
+
+// 验证覆盖层交互：
+const overlay = document.getElementById('overlay');
+const overlayBtn = document.getElementById('overlayBtn');
+const birthdayInput = document.getElementById('birthday');
+const overlayError = document.getElementById('overlayError');
+const CORRECT_BIRTH = '20001224';
+
+function tryUnlock(){
+  const v = (birthdayInput.value || '').trim();
+  if(!/^[0-9]{8}$/.test(v)){
+    overlayError.textContent = '格式应为8位数字';
+    birthdayInput.focus();
+    return;
+  }
+  if(v === CORRECT_BIRTH){
+    overlay.style.display = 'none';
+    overlayError.textContent = '';
+    // 延迟一点视觉更平滑
+    setTimeout(()=> play(), 120);
+  } else {
+    overlayError.textContent = '生日不正确，请再试一次';
+    birthdayInput.focus();
+  }
+}
+
+overlayBtn.addEventListener('click', tryUnlock);
+birthdayInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') tryUnlock(); });
+
+// 将重放按钮仍然保留（用户解锁后可用）
+replay.onclick = play;
+
+// 页面加载时聚焦输入
+window.addEventListener('load', ()=>{ birthdayInput.focus(); });
+</script>
+</body>
+</html>
